@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Casino Mines - Tropical Edition</title>
+    {% load static %}
+    <style>
+        :root {
+            --gold: #ffd700;
+            --dark: rgba(0, 0, 0, 0.7);
+        }
+
+        body { 
+            /* Делаем фон ярче с помощью фильтров */
+            background: linear-gradient(rgba(0,0,0,0.2), rgba(0,0,0,0.2)), url('{% static "images/background.jpg" %}');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            color: var(--gold);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            text-align: center;
+            margin: 0;
+            overflow-x: hidden;
+        }
+
+        .wrap { 
+            background: rgba(0, 0, 0, 0.5); /* Затемнение для читаемости */
+            backdrop-filter: brightness(1.2) saturate(1.5); /* Усиливаем сочность фона */
+            min-height: 100vh; 
+            padding: 20px;
+            position: relative;
+        }
+
+        /* --- АНИМАЦИИ ДЕКОРА --- */
+        .crab {
+            position: absolute;
+            bottom: 50px;
+            left: -100px;
+            font-size: 40px;
+            animation: crabRun 15s infinite linear;
+            z-index: 1;
+        }
+
+        @keyframes crabRun {
+            0% { left: -100px; transform: scaleX(1); }
+            45% { transform: scaleX(1); }
+            50% { left: 90%; transform: scaleX(-1); }
+            95% { transform: scaleX(-1); }
+            100% { left: -100px; transform: scaleX(1); }
+        }
+
+        .palm-leaf {
+            position: absolute;
+            top: -20px;
+            right: 20px;
+            font-size: 80px;
+            transform-origin: top center;
+            animation: sway 4s infinite ease-in-out;
+            z-index: 1;
+            filter: drop-shadow(0 0 10px rgba(0,0,0,0.5));
+        }
+
+        @keyframes sway {
+            0%, 100% { transform: rotate(-5deg); }
+            50% { transform: rotate(8deg); }
+        }
+
+        /* --- ИНТЕРФЕЙС --- */
+        canvas { 
+            background: rgba(255,255,255,0.1); 
+            border: 5px solid var(--gold); 
+            border-radius: 15px;
+            cursor: url('{% static "images/lapsta.png" %}') 16 16, crosshair; 
+            box-shadow: 0 0 30px rgba(255, 215, 0, 0.3);
+            position: relative;
+            z-index: 2;
+        }
+
+        /* КРАСИВЫЕ КНОПКИ */
+        button { 
+            background: linear-gradient(145deg, #333, #111);
+            color: var(--gold); 
+            border: 2px solid var(--gold); 
+            padding: 12px 25px; 
+            cursor: pointer; 
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-radius: 30px;
+            transition: all 0.3s ease;
+            margin: 5px;
+            outline: none;
+        }
+
+        button:hover:not(:disabled) { 
+            background: var(--gold);
+            color: #000;
+            box-shadow: 0 0 15px var(--gold);
+            transform: translateY(-2px);
+        }
+
+        button:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        button:disabled { 
+            opacity: 0.3; 
+            filter: grayscale(1);
+        }
+
+        .stats { font-size: 28px; margin: 15px; text-shadow: 2px 2px 4px #000; }
+        #status-text { height: 30px; font-weight: bold; color: #fff; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div class="crab">🦀</div>
+    <div class="palm-leaf">🌿</div>
+
+    <div class="wrap">
+        <h1>🏝️ TROPICAL MINES 🏝️</h1>
+        
+        <div class="stats">
+            💰 <span id="bal">{{ game.balance }}</span> | 
+            🚀 <span id="mult">x1.0</span>
+        </div>
+
+        <div id="status-text">Готовы начать?</div>
+
+        <div style="margin: 15px;">
+            Ставка: 
+            <button onclick="adjBet(-10)">-</button> 
+            <span id="bet" style="font-size: 24px; font-weight: bold; min-width: 60px; display: inline-block;">{{ game.bet }}</span> 
+            <button onclick="adjBet(10)">+</button>
+        </div>
+
+        <canvas id="gameCanvas" width="400" height="400"></canvas>
+
+        <div style="margin-top: 20px;">
+            <button id="sBtn" onclick="go()">Начать раунд</button>
+            <button id="cBtn" onclick="take()" disabled>Забрать выигрыш</button>
+            <button style="border-color:#ff4d4d; color:#ff4d4d;" onclick="reset()">Рестарт игры</button>
+        </div>
+    </div>
+
+<script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const statusText = document.getElementById("status-text");
+    const gameId = "{{ game.id }}";
+    const CELL = 80;
+    
+    let bet = {{ game.bet }}, active = false, grid = Array(5).fill().map(() => Array(5).fill('c'));
+
+    const imgs = { c: new Image(), b: new Image(), t: new Image() };
+    imgs.c.src = '{% static "images/crest.png" %}';
+    imgs.b.src = '{% static "images/Lucid_Origin_create_a_small_black_bomb_with_a_rounded_body_and_0.jpg" %}';
+    imgs.t.src = '{% static "images/Lucid_Origin_Create_a_minimalist_2D_illustration_of_an_open_pi_3.jpg" %}';
+
+    function draw() {
+        ctx.clearRect(0, 0, 400, 400);
+        for(let r=0; r<5; r++) for(let c=0; c<5; c++) {
+            let i = imgs.c;
+            if(grid[r][c] === 'bomb') i = imgs.b;
+            if(grid[r][c] === 'treasure') i = imgs.t;
+            ctx.drawImage(i, c*CELL+5, r*CELL+5, CELL-10, CELL-10);
+        }
+    }
+    imgs.c.onload = draw;
+
+    function adjBet(v) { 
+        if(!active) { 
+            bet = Math.max(10, bet+v); 
+            document.getElementById("bet").innerText = bet; 
+        } 
+    }
+
+    async function go() {
+        const r = await fetch(`/game/start_round/${gameId}/?bet=${bet}`);
+        const d = await r.json();
+        if(d.status === "success") {
+            active = true; 
+            statusText.innerText = "Удачи! Ищите золото.";
+            statusText.style.color = "white";
+            grid = Array(5).fill().map(() => Array(5).fill('c'));
+            document.getElementById("bal").innerText = d.balance;
+            document.getElementById("sBtn").disabled = true; 
+            document.getElementById("cBtn").disabled = false;
+            draw();
+        } else {
+            statusText.innerText = d.message;
+            statusText.style.color = "#ff4d4d";
+        }
+    }
+
+    canvas.onmousedown = async (e) => {
+        if(!active) return;
+        const rect = canvas.getBoundingClientRect();
+        const c = Math.floor((e.clientX - rect.left) / CELL);
+        const r = Math.floor((e.clientY - rect.top) / CELL);
+        if(grid[r][c] !== 'c') return;
+
+        const res = await fetch(`/game/reveal/${gameId}/${r}/${c}/`);
+        const d = await res.json();
+        grid[r][c] = d.result;
+        document.getElementById("mult").innerText = "x" + d.multiplier;
+        
+        if(!d.active) { 
+            active = false; 
+            statusText.innerText = d.result === 'bomb' ? "БОМБА! Вы проиграли." : "Раунд окончен.";
+            statusText.style.color = "#ff4d4d";
+            document.getElementById("sBtn").disabled = false; 
+            document.getElementById("cBtn").disabled = true; 
+        } else {
+            statusText.innerText = "Отлично! Продолжаем?";
+            statusText.style.color = "#00ff00";
+        }
+        draw();
+    };
+
+    async function take() {
+        const r = await fetch(`/game/cash_out/${gameId}/`);
+        const d = await r.json();
+        active = false; 
+        document.getElementById("bal").innerText = d.balance;
+        document.getElementById("sBtn").disabled = false; 
+        document.getElementById("cBtn").disabled = true;
+        
+        // Вместо alert обновляем текст на экране
+        statusText.innerText = `Победа! Вы забрали ${d.win} 💰`;
+        statusText.style.color = "#ffd700";
+    }
+
+    async function reset() {
+        await fetch(`/game/reset/${gameId}/`);
+        location.reload();
+    }
+</script>
+</body>
+</html>
